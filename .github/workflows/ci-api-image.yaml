@@ -1,0 +1,21 @@
+name: ci-api-image
+
+on:
+  push:
+    tags:
+      - 'api-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      test-tag:
+        description: 'Tag to test image creation'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  call-build-push:
+    uses: ./.github/workflows/build-and-push-docker-image.yaml
+    with:
+      image-prefix: api
+      test-tag: ${{ github.event.inputs.test-tag }}
+    secrets: inherit

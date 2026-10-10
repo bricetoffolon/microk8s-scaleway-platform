@@ -1,0 +1,47 @@
+# Default values for the web chart.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+appName: platform-web
+namespace: platform
+
+# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+
+# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+image:
+  repository: ghcr.io/OWNER/microk8s-scaleway-platform/web
+  # This sets the pull policy for images.
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: latest
+
+# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  port: 80
+  targetPort: 3000
+
+# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  host: example.com
+  tls:
+    - secretName: nginx-tls
+      hosts:
+        - example.com
+  port: 80
+
+# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+# livenessProbe:
+#   httpGet:
+#     path: /
+#     port: http
+readinessProbe:
+  httpGet:
+    path: /                # The path to check for the readiness probe
+    port: 3000               # The port to check on
+  initialDelaySeconds: 30   # Wait this many seconds before starting the probe
+  failureThreshold: 2
+
+configMap:
+  data:
+    API_HOST: "https://example.com/api"

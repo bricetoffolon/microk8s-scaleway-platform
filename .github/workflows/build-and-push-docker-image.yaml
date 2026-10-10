@@ -1,0 +1,53 @@
+name: Build and push Docker image
+
+on:
+  workflow_call:
+    inputs:
+      image-prefix:
+        required: true
+        type: string
+      test-tag:
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-push-image:
+    name: Build and Push Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ inputs.image-prefix }}
+          tags: |
+            type=ref,event=tag,prefix=${{ inputs.image-prefix }}-
+            type=raw,value=${{ inputs.test-tag }},enable=${{ inputs.test-tag != '' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/${{ inputs.image-prefix }}
+          file: ./apps/${{ inputs.image-prefix }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

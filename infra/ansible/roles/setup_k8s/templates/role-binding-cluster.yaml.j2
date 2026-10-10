@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: deployment-manager-clusterissuer-binding
+subjects:
+  - kind: ServiceAccount
+    name: deployment-manager
+    namespace: {{ deployment_namespace }}
+roleRef:
+  kind: ClusterRole
+  name: deployment-manager-clusterrole
+  apiGroup: rbac.authorization.k8s.io

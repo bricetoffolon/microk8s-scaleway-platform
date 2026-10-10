@@ -1,0 +1,85 @@
+name: reusable-deploy-k8s-app
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: Chart name under infra/kubernetes/charts (api or web)
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      tag:
+        required: true
+        type: string
+      helm-args:
+        description: Extra arguments appended to helm upgrade
+        required: false
+        type: string
+        default: ""
+    secrets:
+      GH_CLI_TOKEN:
+        required: true
+      SESSION_SECRET_BASE64:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy:
+    name: helm upgrade ${{ inputs.app }} (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.app }}-${{ inputs.environment }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./infra/kubernetes/charts/${{ inputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the latest kubeconfig artifact for this environment
+        id: run
+        env:
+          GH_TOKEN: ${{ secrets.GH_CLI_TOKEN }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          for id in $(gh api "repos/${{ github.repository }}/actions/workflows/cd-infra-provision-config.yaml/runs?status=success" --jq '.workflow_runs[].id'); do
+            if gh api "repos/${{ github.repository }}/actions/runs/$id/artifacts" --jq '.artifacts[] | select(.expired == false) | .name' | grep -qx "kubeconfig-$ENVIRONMENT"; then
+              echo "run_id=$id" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "No valid kubeconfig artifact for $ENVIRONMENT, re-run cd-infra-provision-config." >&2
+          exit 1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-${{ inputs.environment }}
+          github-token: ${{ secrets.GH_CLI_TOKEN }}
+          path: /tmp
+          run-id: ${{ steps.run.outputs.run_id }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.0
+
+      - name: Deploy release
+        env:
+          KUBECONFIG: /tmp/sa-kubeconfig.yaml
+          SESSION_SECRET_BASE64: ${{ secrets.SESSION_SECRET_BASE64 }}
+        run: |
+          extra=()
+          if [ "${{ inputs.app }}" = "api" ]; then
+            extra+=(--set-string "secrets.data.SESSION_SECRET=${SESSION_SECRET_BASE64}")
+          fi
+          helm upgrade --install "platform-${{ inputs.app }}-release" . \
+            -f values.yaml -f "values-${{ inputs.environment }}.yaml" \
+            --set-string image.tag="${{ inputs.tag }}" \
+            "${extra[@]}" ${{ inputs.helm-args }} \
+            -n "platform-${{ inputs.environment }}" --atomic --timeout 5m

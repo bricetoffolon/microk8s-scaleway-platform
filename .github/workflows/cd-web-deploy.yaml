@@ -1,0 +1,22 @@
+name: cd-web-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: environment
+        required: true
+      tag:
+        description: Image tag to deploy
+        type: string
+        default: latest
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/reusable-deploy-k8s-app.yaml
+    with:
+      app: web
+      environment: ${{ inputs.environment }}
+      tag: ${{ inputs.tag }}
+    secrets: inherit

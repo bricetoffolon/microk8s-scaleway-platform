@@ -1,0 +1,19 @@
+# Default values for the api chart.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+appName: prod-platform-api
+namespace: platform-production
+
+# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  host: example.com
+  tls:
+    - secretName: nginx-tls
+      hosts:
+        - example.com
+  port: 80
+
+configMap:
+  data:
+    ALLOWED_ORIGIN: "https://example.com"

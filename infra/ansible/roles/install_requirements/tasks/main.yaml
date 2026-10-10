@@ -1,0 +1,51 @@
+---
+- name: Update APT package cache
+  become: yes
+  apt:
+    update_cache: yes
+
+- name: Upgrade all APT packages
+  become: yes
+  apt:
+    upgrade: dist
+    autoremove: yes
+
+- name: Install required packages
+  apt:
+    name:
+      - snapd
+      - curl
+      - gnupg2
+    state: present
+
+- name: Ensure snapd is up to date (required for microk8s/core20)
+  become: yes
+  command: sudo snap install core snapd
+
+- name: Install MicroK8s via snap manually
+  become: yes
+  command: sudo snap install microk8s --classic --channel={{ microk8s_channel }}
+
+- name: Add user to microk8s
+  user:
+    name: "{{ ansible_user | default(lookup('env', 'ANSIBLE_USER')) | default('ansible', true) }}"
+    groups: microk8s
+    append: yes
+  register: user_add
+
+- name: Allow microk8s group to access .kube directory
+  file:
+    path: ~/.kube
+    state: directory
+    mode: '0755'
+  when: user_add.changed
+
+- name: Wait for microk8s to be ready
+  shell: /snap/bin/microk8s status --wait-ready
+  changed_when: false
+  timeout: 30000
+
+- name: Enable required add-ons
+  shell: "/snap/bin/microk8s enable {{ item }}"
+  loop: "{{ enable_addons }}"
+  changed_when: true

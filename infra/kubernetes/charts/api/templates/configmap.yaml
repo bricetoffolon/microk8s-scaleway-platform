@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-configmap
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.appName }}
+data:
+  PORT: "{{ .Values.configMap.data.PORT }}"
+  ALLOWED_ORIGIN: "{{ .Values.configMap.data.ALLOWED_ORIGIN }}"
+  API_ROUTE: "{{ .Values.configMap.data.API_ROUTE }}"
+  EMAIL: "{{ .Values.configMap.data.EMAIL }}"
+  DATABASE_URL: "{{ .Values.configMap.data.DATABASE_URL }}"
+  AWS_REGION: "{{ .Values.configMap.data.AWS_REGION }}"
+  AWS_BUCKET: "{{ .Values.configMap.data.AWS_BUCKET }}"
+  AWS_BUCKET_POSTS: "{{ .Values.configMap.data.AWS_BUCKET_POSTS }}"
+  REDIS_URL: "{{ .Values.configMap.data.REDIS_URL }}"

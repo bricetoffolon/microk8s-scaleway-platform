@@ -1,0 +1,90 @@
+name: ci-lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.2"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init && tflint --recursive
+      - name: Bootstrap stack
+        working-directory: infra/terraform/bootstrap
+        run: terraform init -backend=false && terraform validate
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkov (Terraform + Kubernetes + Dockerfiles)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform,dockerfile,github_actions
+          soft_fail: true # advisory: see "Known limitations" in the README
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.0
+      - name: Lint and render every chart for every environment
+        run: |
+          for chart in api web; do
+            helm lint infra/kubernetes/charts/$chart
+            for env in dev staging production; do
+              helm template t infra/kubernetes/charts/$chart \
+                -f infra/kubernetes/charts/$chart/values.yaml \
+                -f infra/kubernetes/charts/$chart/values-$env.yaml > /tmp/$chart-$env.yaml
+            done
+          done
+      - name: Validate rendered manifests
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          ./kubeconform -strict -summary /tmp/api-*.yaml /tmp/web-*.yaml
+
+  ansible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install "ansible-core==2.17.*" ansible-lint
+      - run: ansible-lint infra/ansible/microk8s-setup-playbook.yaml
+        continue-on-error: true # advisory, see roadmap
+
+  docker:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: apps/${{ matrix.app }}/Dockerfile
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/${{ matrix.app }}
+          push: false

@@ -1,0 +1,25 @@
+---
+- name: Setup microk8s playbook
+  hosts: all
+  remote_user: "{{ lookup('env', 'ANSIBLE_USER') | default('ansible') }}"
+  become: yes
+  roles:
+    - install_requirements
+    - setup_k8s_cert_manager
+    - setup_k8s
+    - install-helm-charts
+    - generate_sa_kubeconfig
+
+  vars:
+    microk8s_channel: 1.32
+    enable_addons:
+      - dns
+      - dashboard
+      - storage
+      - ingress
+      - metrics-server
+      - rbac
+    deployment_env: "{{ lookup('env', 'DEPLOYMENT_ENV') | default('staging', true) }}"
+    deployment_namespace: "platform-{{ deployment_env }}"
+    letsencrypt_email: "{{ lookup('env', 'LETSENCRYPT_EMAIL') }}"
+    cloudflare_account_email: "{{ lookup('env', 'CLOUDFLARE_ACCOUNT_EMAIL') }}"

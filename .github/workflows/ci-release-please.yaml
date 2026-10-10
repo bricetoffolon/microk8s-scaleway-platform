@@ -1,0 +1,24 @@
+name: ci-release-please
+on:
+  push:
+    branches: [ 'main' ]
+  workflow_dispatch:
+jobs:
+  release-please:
+    name: Run release please for components
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # A PAT is needed so tags created by release-please trigger the image workflows
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}

@@ -1,0 +1,48 @@
+name: ci-terraform-plan
+
+# Shows what a PR would change in the dev environment. Needs the dev environment's cloud credentials.
+on:
+  pull_request:
+    paths: ['infra/terraform/**']
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: infra/terraform
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_project_id: ${{ vars.SCW_PROJECT_ID }}
+      TF_VAR_ssh_key: ${{ secrets.SSH }}
+      TF_VAR_scaleway_ansible_user: ${{ secrets.ANSIBLE_USER }}
+      TF_VAR_cloudfront_public_key_pem: ${{ secrets.PUBLIC_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.2"
+          terraform_wrapper: false
+      - run: terraform init -backend-config=envs/dev.backend.hcl
+      - id: plan
+        run: |
+          terraform plan -no-color -var-file=envs/dev.tfvars -lock=false | tee plan.txt
+      - uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/terraform/plan.txt', 'utf8').slice(-60000);
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: context.issue.number,
+              body: '#### Terraform plan (dev)\n```\n' + plan + '\n```'
+            });

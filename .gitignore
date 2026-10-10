@@ -1,0 +1,10 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.pem
+*kubeconfig*.yaml
+.env
+.env.*
+tfplan
+plan.txt
+.terraform.lock.hcl.bak

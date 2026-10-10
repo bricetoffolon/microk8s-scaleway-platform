@@ -1,0 +1,24 @@
+- name: Install cert-manager
+  shell: sudo /snap/bin/microk8s kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+
+- name: Remove existing Cloudflare secret if it exists
+  shell: sudo /snap/bin/microk8s kubectl delete secret cloudflare-api-key-secret -n cert-manager --ignore-not-found=true
+
+- name: Add Cloudflare secret
+  shell: sudo /snap/bin/microk8s kubectl create secret generic cloudflare-api-key-secret --from-literal=api-key={{ lookup('env', 'CLOUDFLARE_SECRET_API_KEY') }} -n cert-manager
+  no_log: true
+
+- name: Copy cluster issuer
+  template:
+    src: templates/cluster-issuer.yaml
+    dest: /tmp/cluster-issuer.yaml
+    mode: '0644'
+
+- name: Install cluster issuer
+  shell: sudo /snap/bin/microk8s kubectl apply -f /tmp/cluster-issuer.yaml
+
+- name: Remove temporary manifest
+  file:
+    path: /tmp/cluster-issuer.yaml
+    state: absent
+  when: cleanup_temp_files | default(true)

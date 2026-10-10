@@ -1,0 +1,39 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front-deployment
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.appName }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}
+    spec:
+      imagePullSecrets:
+        - name: regcred
+      containers:
+        - name: "{{ .Values.appName }}-container"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            limits:
+              memory: "256Mi"  # Maximum memory allowed
+              cpu: "500m"       # Maximum CPU allowed (500 milliCPU)
+            requests:
+              memory: "128Mi"  # Initial memory request
+              cpu: "200m" # Initial CPU request
+          envFrom:
+            - configMapRef:
+                name: front-configmap

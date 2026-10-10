@@ -1,0 +1,159 @@
+name: cd-infra-provision-config
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: environment
+        required: true
+      infra-option:
+        description: Create or delete the infrastructure
+        type: choice
+        default: apply
+        options:
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  terraform:
+    name: Provision Terraform resources
+    runs-on: ubuntu-latest
+    # Configure required reviewers on the GitHub Environments to gate apply/destroy.
+    environment: ${{ inputs.environment }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./infra/terraform
+    outputs:
+      instance_public_ip: ${{ steps.output.outputs.instance_public_ip }}
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TF_VAR_project_id: ${{ vars.SCW_PROJECT_ID }}
+      TF_VAR_ssh_key: ${{ secrets.SSH }}
+      TF_VAR_scaleway_ansible_user: ${{ secrets.ANSIBLE_USER }}
+      TF_VAR_cloudfront_public_key_pem: ${{ secrets.PUBLIC_KEY_PEM }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.11.2"
+
+      - name: Terraform init
+        run: terraform init -backend-config=envs/${{ inputs.environment }}.backend.hcl
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: |
+          terraform plan -var-file=envs/${{ inputs.environment }}.tfvars \
+            ${{ inputs.infra-option == 'destroy' && '-destroy' || '' }} -out=tfplan
+
+      - name: Terraform ${{ inputs.infra-option }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Capture Terraform output
+        id: output
+        if: ${{ inputs.infra-option == 'apply' }}
+        run: |
+          ip=$(terraform output -raw instance_public_ip)
+          echo "::add-mask::$ip"
+          echo "instance_public_ip=$ip" >> "$GITHUB_OUTPUT"
+
+  ansible:
+    name: Configure MicroK8s with Ansible
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    if: ${{ inputs.infra-option == 'apply' }}
+    needs: terraform
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./infra/ansible
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ansible
+        run: pip install "ansible-core==2.17.*"
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Setup inventory
+        env:
+          HOST_IP: ${{ needs.terraform.outputs.instance_public_ip }}
+        run: sed -i "s/HOST_IP_ADDRESS/${HOST_IP}/g" inventory/hosts.yaml
+
+      - name: Run playbook
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          ANSIBLE_USER: ${{ secrets.ANSIBLE_USER }}
+          CLOUDFLARE_SECRET_API_KEY: ${{ secrets.CLOUDFLARE_SECRET_API_KEY }}
+          LETSENCRYPT_EMAIL: ${{ vars.LETSENCRYPT_EMAIL }}
+          CLOUDFLARE_ACCOUNT_EMAIL: ${{ vars.CLOUDFLARE_ACCOUNT_EMAIL }}
+          DEPLOYMENT_ENV: ${{ inputs.environment }}
+        run: ansible-playbook --inventory inventory/hosts.yaml microk8s-setup-playbook.yaml
+
+      - name: Upload kubeconfig as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeconfig-${{ inputs.environment }}
+          path: /tmp/sa-kubeconfig.yaml
+          retention-days: 7
+          overwrite: true
+          include-hidden-files: true
+
+  create-docker-registry-secret-k8s:
+    name: Create image pull secret
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    if: ${{ inputs.infra-option == 'apply' }}
+    needs: ansible
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kubeconfig-${{ inputs.environment }}
+          path: /tmp
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.0
+
+      - name: Create regcred in the app namespace
+        env:
+          KUBECONFIG: /tmp/sa-kubeconfig.yaml
+          NS: platform-${{ inputs.environment }}
+          REG_USER: ${{ secrets.DOCKER_USERNAME }}
+          REG_PASS: ${{ secrets.DOCKER_PASSWORD }}
+          REG_EMAIL: ${{ secrets.DOCKER_EMAIL }}
+        run: |
+          kubectl -n "$NS" delete secret regcred --ignore-not-found
+          kubectl -n "$NS" create secret docker-registry regcred \
+            --docker-server=ghcr.io \
+            --docker-username="$REG_USER" \
+            --docker-password="$REG_PASS" \
+            --docker-email="$REG_EMAIL"

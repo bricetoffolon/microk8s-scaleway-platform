@@ -1,0 +1,26 @@
+---
+- name: Get Kubernetes config
+  shell: /snap/bin/microk8s config
+  register: kube_config
+
+- name: Copy service account generator config
+  template:
+    src: templates/generate-sa-config.sh
+    dest: /tmp/generate-sa-config.sh
+    mode: '0755'
+
+- name: Setup config file for service account
+  shell: /tmp/generate-sa-config.sh {{ deployment_namespace }}
+  register: sa_config_output
+
+- name: Fetch the generated kubeconfig
+  fetch:
+    src: ./sa-kubeconfig.yaml
+    dest: /tmp/
+    flat: yes
+
+- name: Remove temporary script
+  file:
+    path: /tmp/generate-sa-config.sh
+    state: absent
+  when: cleanup_temp_files | default(true)

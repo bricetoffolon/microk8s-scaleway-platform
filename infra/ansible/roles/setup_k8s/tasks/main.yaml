@@ -1,0 +1,59 @@
+---
+- name: Install kubernetes Python library via apt
+  apt:
+    name: python3-kubernetes
+    state: present
+  become: yes
+
+- name: Create namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ deployment_namespace }}"
+    kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+- name: Create service account
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: deployment-manager
+        namespace: "{{ deployment_namespace }}"
+    kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+- name: Copy k8s role manifests
+  template:
+    src: "{{ item }}.j2"
+    dest: "/tmp/{{ item }}"
+  loop:
+    - role.yaml
+    - role-cluster.yaml
+    - role-binding.yaml
+    - role-binding-cluster.yaml
+
+- name: Apply k8s role manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/{{ item }}"
+    kubeconfig: /var/snap/microk8s/current/credentials/client.config
+  loop:
+    - role.yaml
+    - role-cluster.yaml
+    - role-binding.yaml
+    - role-binding-cluster.yaml
+
+- name: Remove temporary manifest
+  file:
+    path: "/tmp/{{ item }}"
+    state: absent
+  loop:
+    - role.yaml
+    - role-cluster.yaml
+    - role-binding.yaml
+    - role-binding-cluster.yaml
+  when: cleanup_temp_files | default(true)

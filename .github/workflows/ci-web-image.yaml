@@ -1,0 +1,21 @@
+name: ci-web-image
+
+on:
+  push:
+    tags:
+      - 'web-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      test-tag:
+        description: 'Tag to test image creation'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  call-build-push:
+    uses: ./.github/workflows/build-and-push-docker-image.yaml
+    with:
+      image-prefix: web
+      test-tag: ${{ github.event.inputs.test-tag }}
+    secrets: inherit
