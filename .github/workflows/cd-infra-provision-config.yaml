@@ -139,7 +139,7 @@ jobs:
           name: kubeconfig-${{ inputs.environment }}
           path: /tmp
 
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v5
         with:
           version: v1.32.0
 
