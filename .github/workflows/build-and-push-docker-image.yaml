@@ -44,7 +44,7 @@ jobs:
             type=raw,value=${{ inputs.test-tag }},enable=${{ inputs.test-tag != '' }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./apps/${{ inputs.image-prefix }}
           file: ./apps/${{ inputs.image-prefix }}/Dockerfile
